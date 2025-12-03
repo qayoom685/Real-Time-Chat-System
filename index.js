@@ -43,7 +43,7 @@ app.get("/api/private/:userA/:userB/messages", async (req, res) => {
 
 // --- Socket.IO real-time logic ---
 
-// keep in-memory map: userId -> socketId (for demo). In prod use Redis for scaling.
+
 const onlineUsers = new Map();
 
 io.on("connection", (socket) => {
@@ -51,7 +51,7 @@ io.on("connection", (socket) => {
 
   // Register user (client should emit 'register' with { userId, name })
   socket.on("register", async ({ userId, name }) => {
-    // save or update user
+   
     let user = null;
     if (userId) {
       user = await User.findByIdAndUpdate(
