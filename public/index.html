@@ -1,0 +1,160 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>IMS Chat</title>
+  <style>
+    body{font-family:Arial;margin:12px}
+    #left{float:left;width:220px}
+    #main{margin-left:240px}
+    .user{cursor:pointer;padding:6px;border-bottom:1px solid #eee}
+    .msg{padding:6px;margin:6px 0;border-radius:6px}
+    .self{background:#def}
+    .other{background:#f1f1f1}
+  </style>
+</head>
+<body>
+  <h2>IMS — Real-time Chat (Demo)</h2>
+
+  <div id="left">
+    <label>Your name:<br/><input id="name" placeholder="Enter name"/></label>
+    <button id="btnRegister">Register</button>
+    <hr/>
+    <h4>Rooms</h4>
+    <input id="roomName" placeholder="room name"/><button id="btnJoin">Join</button>
+    <ul id="rooms"></ul>
+    <hr/>
+    <h4>Online Users</h4>
+    <div id="users"></div>
+  </div>
+
+  <div id="main">
+    <h3 id="context">No room / private selected</h3>
+
+    <div id="messages" style="height:400px;overflow:auto;border:1px solid #ddd;padding:10px"></div>
+
+    <div style="margin-top:8px">
+      <input id="message" style="width:70%" placeholder="Type message"/>
+      <button id="btnSend">Send</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    let me = null;
+    let currentRoom = null;
+    let privateTarget = null; // userId
+
+    // UI elements
+    const nameEl = document.getElementById("name");
+    const btnRegister = document.getElementById("btnRegister");
+    const usersDiv = document.getElementById("users");
+    const roomsUl = document.getElementById("rooms");
+    const roomNameInput = document.getElementById("roomName");
+    const btnJoin = document.getElementById("btnJoin");
+    const messagesDiv = document.getElementById("messages");
+    const messageInput = document.getElementById("message");
+    const btnSend = document.getElementById("btnSend");
+    const contextH3 = document.getElementById("context");
+
+    // register
+    btnRegister.onclick = () => {
+      const name = nameEl.value.trim();
+      if (!name) return alert("Enter name");
+      socket.emit("register", { name });
+    };
+
+    socket.on("registered", (data) => {
+      me = data;
+      nameEl.value = data.name;
+      nameEl.disabled = true;
+      console.log("registered", data);
+    });
+
+    // presence update
+    socket.on("presence", (onlineIds) => {
+      // For demo: list all user records from server isn't exposed, so show IDs
+      usersDiv.innerHTML = "";
+      onlineIds.forEach(uid => {
+        if (me && uid === me.userId) return;
+        const d = document.createElement("div");
+        d.className = 'user';
+        d.textContent = uid;
+        d.onclick = () => {
+          // private chat target
+          privateTarget = uid;
+          currentRoom = null;
+          contextH3.textContent = "Private chat with: " + uid;
+          messagesDiv.innerHTML = "";
+          // load history
+          fetch(`/api/private/${me.userId}/${uid}/messages`).then(r=>r.json()).then(renderMessages);
+        };
+        usersDiv.appendChild(d);
+      });
+    });
+
+    // rooms UI
+    btnJoin.onclick = () => {
+      const r = roomNameInput.value.trim();
+      if (!r) return;
+      currentRoom = r;
+      privateTarget = null;
+      socket.emit("joinRoom", r);
+      contextH3.textContent = "Room: " + r;
+      messagesDiv.innerHTML = "";
+      fetch(`/api/rooms/${r}/messages`).then(r=>r.json()).then(renderMessages);
+      // show in list
+      const li = document.createElement("li"); li.textContent = r; roomsUl.appendChild(li);
+    };
+
+    // send message
+    btnSend.onclick = () => {
+      const content = messageInput.value.trim();
+      if (!content) return;
+      if (!me) return alert("Register first");
+      if (currentRoom) {
+        socket.emit("roomMessage", { room: currentRoom, content });
+      } else if (privateTarget) {
+        socket.emit("privateMessage", { toUserId: privateTarget, content });
+      } else {
+        alert("Join a room or click an online user for private chat");
+      }
+      messageInput.value = "";
+    };
+
+    // receive room messages
+    socket.on("newRoomMessage", (msg) => {
+      appendMessage(msg);
+    });
+
+    // receive private messages
+    socket.on("newPrivateMessage", (msg) => {
+      appendMessage(msg);
+    });
+
+    // helper to append message
+    function appendMessage(msg) {
+      const div = document.createElement("div");
+      div.className = 'msg ' + (me && msg.from === me.userId ? 'self' : 'other');
+      div.innerHTML = `<small>${new Date(msg.createdAt).toLocaleTimeString()}</small><br/><strong>${msg.from}</strong>: ${msg.content}`;
+      messagesDiv.appendChild(div);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function renderMessages(arr) {
+      messagesDiv.innerHTML = "";
+      arr.forEach(appendMessage);
+    }
+
+    // show joined room acknowledgement
+    socket.on("joinedRoom", (r) => {
+      console.log("joined room", r);
+    });
+
+    // errors
+    socket.on("error", (e) => alert(e));
+  </script>
+</body>
+</html>
